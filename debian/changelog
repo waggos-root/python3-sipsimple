@@ -1,3 +1,11 @@
+python3-sipsimple (5.5.0+mjpeg1) unstable; urgency=medium
+
+  * Capture MJPEG from v4l2 cameras that support it (decoded to I420 by
+    libv4l2), so 720p video runs at 30 fps instead of 5 fps
+  * Set the requested frame rate on v4l2 cameras
+
+ -- Washington <wguerrero42@gmail.com>  Tue, 06 Oct 2026 11:30:00 -0500
+
 python3-sipsimple (5.5.0) unstable; urgency=medium
 
   * Added EndpointExtension to conference info payload

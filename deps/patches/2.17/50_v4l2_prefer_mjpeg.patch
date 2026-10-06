@@ -1,0 +1,91 @@
+# 50_v4l2_prefer_mjpeg.patch
+#
+# Capture MJPEG cameras at their full frame rate.
+#
+# The v4l2 capture device only knows raw formats and uses the first one
+# the camera lists, usually YUYV. Raw YUYV is limited by USB 2.0
+# bandwidth at higher resolutions: a UVC camera doing 30 fps MJPEG at
+# 1280x720 (sipsimple's default resolution) only gives 5 fps in YUYV,
+# which makes the video laggy.
+#
+# When the camera natively offers MJPEG, make I420 the default format.
+# libv4l2 doesn't have I420 natively from such cameras, so it captures
+# MJPEG and decodes it to I420 (libv4lconvert), which is also the format
+# the video encoders take. Cameras without MJPEG are unaffected.
+#
+# Also request the configured frame rate with VIDIOC_S_PARM, which was
+# never set, so the camera kept whatever rate it was left at.
+#
+--- pjsip_orig/pjmedia/src/pjmedia-videodev/v4l2_dev.c
++++ pjsip/pjmedia/src/pjmedia-videodev/v4l2_dev.c
+@@ -297,6 +297,7 @@
+         vid4lin_dev_info *pdi;
+         pj_uint32_t fmt_cap[8];
+         int j, fmt_cnt=0;
++        pj_bool_t has_mjpeg = PJ_FALSE;
+ 
+         pdi = &vdi[f->dev_count];
+ 
+@@ -334,6 +335,13 @@
+             if (status != PJ_SUCCESS)
+                 break;
+ 
++            if ((fdesc.flags & V4L2_FMT_FLAG_EMULATED) == 0 &&
++                (fdesc.pixelformat == V4L2_PIX_FMT_MJPEG ||
++                 fdesc.pixelformat == V4L2_PIX_FMT_JPEG))
++            {
++                has_mjpeg = PJ_TRUE;
++            }
++
+             for (k=0; k<PJ_ARRAY_SIZE(v4l2_fmt_maps); ++k) {
+                 if (v4l2_fmt_maps[k].v4l2_fmt_id == fdesc.pixelformat) {
+                     fmt_cap[fmt_cnt++] = v4l2_fmt_maps[k].pjmedia_fmt_id;
+@@ -353,6 +361,25 @@
+             continue;
+         }
+ 
++        /* Raw formats are limited by USB bandwidth at higher resolutions
++         * (e.g. 5 fps for YUYV 1280x720 on USB 2.0), while MJPEG gets the
++         * full frame rate. When the camera has MJPEG, make I420 the first
++         * (default) format, so that libv4l2 captures MJPEG and decodes it
++         * to I420, which is also what the video encoders use.
++         */
++        if (has_mjpeg) {
++            for (j=1; j<fmt_cnt; ++j) {
++                if (fmt_cap[j] == PJMEDIA_FORMAT_I420) {
++                    pj_memmove(&fmt_cap[1], &fmt_cap[0],
++                               j * sizeof(fmt_cap[0]));
++                    fmt_cap[0] = PJMEDIA_FORMAT_I420;
++                    PJ_LOG(5,(THIS_FILE, "  Preferring I420 (decoded from "
++                              "MJPEG)"));
++                    break;
++                }
++            }
++        }
++
+         pj_ansi_strxcpy(pdi->dev_name, dev_name, sizeof(pdi->dev_name));
+         pj_ansi_strxcpy(pdi->info.name, (char*)pdi->v4l2_cap.card,
+                         sizeof(pdi->info.name));
+@@ -505,6 +532,22 @@
+         vfd->size.h = v4l2_fmt.fmt.pix.height;
+     }
+ 
++    /* Request the frame rate. Failure is not fatal, the device then
++     * captures at its current rate.
++     */
++    if (vfd->fps.num && vfd->fps.denum) {
++        struct v4l2_streamparm parm;
++
++        pj_bzero(&parm, sizeof(parm));
++        parm.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
++        parm.parm.capture.timeperframe.numerator = vfd->fps.denum;
++        parm.parm.capture.timeperframe.denominator = vfd->fps.num;
++        if (xioctl(stream->fd, VIDIOC_S_PARM, &parm) != PJ_SUCCESS) {
++            PJ_LOG(4,(THIS_FILE, "Unable to set %d/%d fps on %s",
++                      vfd->fps.num, vfd->fps.denum, stream->name));
++        }
++    }
++
+     return PJ_SUCCESS;
+ }
+ 

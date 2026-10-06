@@ -187,6 +187,13 @@ New 2.17-only support:
                                        / standard WebRTC, unlocking
                                        720p negotiation on Mac -> Sylk
                                        Mobile H.264 calls.
+  50_v4l2_prefer_mjpeg.patch           2.17-only - v4l2 capture defaults
+                                       to I420 when the camera has MJPEG,
+                                       so libv4l2 captures MJPEG and
+                                       decodes it (YUYV 1280x720 gave
+                                       5 fps on USB 2.0, MJPEG 30 fps).
+                                       Also sets the frame rate with
+                                       VIDIOC_S_PARM.
 
 
 Dropped permanently
